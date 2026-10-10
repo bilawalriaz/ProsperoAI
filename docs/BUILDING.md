@@ -162,7 +162,7 @@ and [current evidence](VK_ACTIVE.md).
 
 ### Download presets
 
-The native Models library includes pinned Text (Mistral 7B Q4_0, Qwen3.5 9B Q4_0),
+The native Models library includes pinned Text (Mistral 7B Q4_0, Qwen3.5 9B Q4_0, MiniCPM5 2B Q8_0),
 Image (SD-Turbo FP16), Audio (Stable Audio Open Small FP16), and Voice (Kokoro 82M FP16)
 presets. Cross downloads the selected preset; L2/R2 change category and arrows select
 cards. The progress bar shows bytes and percentage for the entire bundle. Search typing
@@ -248,3 +248,6 @@ The GitHub workflow uses Ubuntu 24.04 LLVM 19 host libraries with the pinned Mes
 and SDK sources via `tools/setup-vulkan-ci.sh`, then builds the application with
 Clang 18. The existing developer `make radv` path remains available on Debian.
 Tag releases are built and attested in CI; published ZIPs are never overwritten.
+
+MiniCPM5 is an optional official GGUF download. Select it from Models > Text
+and choose it after installation. See [MiniCPM5 usage](MINICPM5.md).
