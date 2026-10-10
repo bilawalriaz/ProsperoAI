@@ -94,3 +94,11 @@ endorsed by Sony Interactive Entertainment or the model authors.
 The PS5 ELF converter and FSELF writer in `tooling/native/` are derived from
 [SharpProspero](https://github.com/SvenGDK/SharpProspero), Copyright (C) 2026
 SvenGDK, GPL-3.0, and were translated to C++ and modified by BlackBearReloaded.
+
+## MiniCPM5 chat template
+
+`tests/fixtures/minicpm5-chat.jinja` is OpenBMB's chat template extracted from
+the official MiniCPM5-2B Q8_0 GGUF at revision
+`2079a22f3beaa4e306449978533478fe0522f4b3`. It is used as the formatter test oracle.
+MiniCPM5 is published under Apache-2.0; see `third_party/minicpm5/LICENSE`.
+The optional model preset downloads weights from OpenBMB when requested.

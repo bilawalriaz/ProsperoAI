@@ -3,6 +3,7 @@
 #ifdef PS5_LLAMA_VULKAN
 #include "gpt_runtime.hpp"
 #include "inference_config.hpp"
+#include "minicpm5_chat.hpp"
 #ifdef PROSPERO_HYBRID_MEDIA
 #include "runtime_vulkan.hpp"
 #endif
@@ -258,7 +259,15 @@ int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
         if (!prepare()) { std::snprintf(output, capacity, "Unable to load a GGUF model on Vulkan."); return 1; }
         std::string prompt;
         const char *tmpl = llama_model_chat_template(model, nullptr);
-        if (tmpl) {
+        char tokenizer_pre[32] = {};
+        llama_model_meta_val_str(model, "tokenizer.ggml.pre", tokenizer_pre, sizeof(tokenizer_pre));
+        const bool minicpm5 = std::strcmp(tokenizer_pre, "minicpm5") == 0;
+        if (minicpm5) {
+            if (!prospero::minicpm5_chat(messages, count, prompt)) {
+                std::snprintf(output, capacity, "MiniCPM5 supports system, user and assistant text messages.");
+                return 1;
+            }
+        } else if (tmpl) {
             std::vector<llama_chat_message> chat;
             for (unsigned i = 0; i < count; ++i)
                 if (messages[i].role && messages[i].content) chat.push_back({messages[i].role, messages[i].content});
@@ -275,7 +284,7 @@ int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
                 }
         }
         const auto *vocab = llama_model_get_vocab(model);
-        int n = -llama_tokenize(vocab, prompt.data(), prompt.size(), nullptr, 0, true, true);
+        int n = -llama_tokenize(vocab, prompt.data(), prompt.size(), nullptr, 0, !minicpm5, true);
         if (n <= 0) return 1;
         unsigned limit = std::min(settings.max_output_tokens ? settings.max_output_tokens : 128U, 512U);
         if ((unsigned)n + 1 >= llama_n_ctx(context)) {
@@ -284,7 +293,7 @@ int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
         }
         limit = std::min(limit, llama_n_ctx(context) - (unsigned)n);
         std::vector<llama_token> tokens(n);
-        if (llama_tokenize(vocab, prompt.data(), prompt.size(), tokens.data(), n, true, true) < 0) return 1;
+        if (llama_tokenize(vocab, prompt.data(), prompt.size(), tokens.data(), n, !minicpm5, true) < 0) return 1;
         const auto memory = llama_get_memory(context);
         CacheTransaction cache_transaction{memory};
         int64_t start = ggml_time_us();
