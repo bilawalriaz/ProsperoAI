@@ -133,6 +133,7 @@ std::size_t reuse_prompt_prefix(llama_memory_t memory, const std::vector<llama_t
     return reused;
 }
 
+unsigned context_setting = 0;
 bool prepare() {
     scan_models();
     if (files.empty()) return false;
@@ -164,8 +165,8 @@ bool prepare() {
     const int64_t weights_ready = ggml_time_us();
     prefix_cache_enabled = access("/app0/disable_prefix_cache.txt", F_OK) != 0;
     auto cp = llama_context_default_params();
-    const unsigned requested_context = prospero::read_inference_setting(
-        "/app0", "context_size.txt", 4096, 512, 16384);
+    const unsigned requested_context = context_setting ? context_setting :
+        prospero::read_inference_setting("/app0", "context_size.txt", 4096, 512, 16384);
     cp.n_ctx = std::min<uint32_t>(requested_context, llama_model_n_ctx_train(model));
     cp.n_batch = prospero::read_inference_setting("/app0", "batch_size.txt", 256, 32, 2048);
     cp.n_ubatch = std::min(cp.n_batch, prospero::read_inference_setting(
@@ -256,6 +257,17 @@ int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
             unsigned index = static_cast<unsigned>(found - files.begin());
             if (index != selected) { release_model(); selected = index; }
         }
+        if (settings.context_tokens && (settings.context_tokens < 512 || settings.context_tokens > 16384)) {
+            std::snprintf(output, capacity, "Context window must be between 512 and 16384 tokens."); return 1;
+        }
+        if (context_setting != settings.context_tokens) {
+            const unsigned wanted = settings.context_tokens ? settings.context_tokens :
+                prospero::read_inference_setting("/app0", "context_size.txt", 4096, 512, 16384);
+            // Keep the prepared model and prefix when only the source of the same limit changes.
+            if (context && llama_n_ctx(context) != std::min<uint32_t>(wanted, llama_model_n_ctx_train(model)))
+                release_model();
+            context_setting = settings.context_tokens;
+        }
         if (!prepare()) { std::snprintf(output, capacity, "Unable to load a GGUF model on Vulkan."); return 1; }
         std::string prompt;
         const char *tmpl = llama_model_chat_template(model, nullptr);
@@ -286,7 +298,7 @@ int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
         const auto *vocab = llama_model_get_vocab(model);
         int n = -llama_tokenize(vocab, prompt.data(), prompt.size(), nullptr, 0, !minicpm5, true);
         if (n <= 0) return 1;
-        unsigned limit = std::min(settings.max_output_tokens ? settings.max_output_tokens : 128U, 512U);
+        unsigned limit = std::min(settings.max_output_tokens ? settings.max_output_tokens : 128U, 4096U);
         if ((unsigned)n + 1 >= llama_n_ctx(context)) {
             context_full = true;
             std::snprintf(output, capacity, "Conversation exceeds this model's context window."); return 1;

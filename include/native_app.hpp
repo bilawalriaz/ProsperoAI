@@ -29,6 +29,7 @@ struct Model
 struct Preferences
 {
     unsigned style = 0, output_limit = 128;
+    unsigned context_limit = 0;
     unsigned theme = 0, accent = 0, volume = 35, text_size = 0;
     bool reduced_motion = false, high_contrast = false;
     std::string model_id;
@@ -143,7 +144,7 @@ class App
     std::atomic_flag stream_lock_ = ATOMIC_FLAG_INIT;
     std::atomic<unsigned> stream_version_{0};
     unsigned displayed_stream_ = 0;
-    char stream_buffer_[4096]{};
+    char stream_buffer_[prospero_session::MessageBytes]{};
 #ifdef PROSPERO_HOST
     pthread_t thread_{};
 #else

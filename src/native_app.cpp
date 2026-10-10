@@ -69,8 +69,12 @@ void validate(Preferences &p)
 {
     p.style = std::min(p.style, 2U);
     if (p.output_limit != 64 && p.output_limit != 128 && p.output_limit != 192 &&
-        p.output_limit != 256)
+        p.output_limit != 256 && p.output_limit != 512 && p.output_limit != 1024 &&
+        p.output_limit != 2048 && p.output_limit != 4096)
         p.output_limit = 128;
+    if (p.context_limit != 0 && p.context_limit != 2048 && p.context_limit != 4096 &&
+        p.context_limit != 8192 && p.context_limit != 16384)
+        p.context_limit = 0;
     p.theme = std::min(p.theme, 1U);
     p.accent = std::min(p.accent, 2U);
     p.volume = std::min(p.volume, 100U);
@@ -114,6 +118,8 @@ void load_preferences(Preferences &p, const std::vector<Model> &models)
                 p.style = number;
             else if (std::strcmp(key, "tokens") == 0)
                 p.output_limit = number;
+            else if (std::strcmp(key, "context") == 0)
+                p.context_limit = number;
             else if (std::strcmp(key, "theme") == 0)
                 p.theme = number;
             else if (std::strcmp(key, "accent") == 0)
@@ -138,12 +144,12 @@ bool save_preferences(const Preferences &p)
     std::FILE *file = std::fopen(temporary, "wb");
     if (!file)
         return false;
-    const int bytes =
-        std::fprintf(file,
-                     "version=2\nmodel=%s\nstyle=%u\ntokens=%u\ntheme=%u\naccent=%u\nvolume=%"
-                     "u\ntext_size=%u\nreduced_motion=%u\nhigh_contrast=%u\n",
-                     p.model_id.c_str(), p.style, p.output_limit, p.theme, p.accent, p.volume,
-                     p.text_size, p.reduced_motion ? 1U : 0U, p.high_contrast ? 1U : 0U);
+    const int bytes = std::fprintf(
+        file,
+        "version=2\nmodel=%s\nstyle=%u\ntokens=%u\ncontext=%u\ntheme=%u\naccent=%u\nvolume=%"
+        "u\ntext_size=%u\nreduced_motion=%u\nhigh_contrast=%u\n",
+        p.model_id.c_str(), p.style, p.output_limit, p.context_limit, p.theme, p.accent, p.volume,
+        p.text_size, p.reduced_motion ? 1U : 0U, p.high_contrast ? 1U : 0U);
     const int closed = std::fclose(file);
     if (bytes < 0 || closed != 0 || std::rename(temporary, PROSPERO_SETTINGS_PATH) != 0)
     {
@@ -730,7 +736,7 @@ void App::generate()
         result_.status = "Could not save your message. Check available storage, then retry.";
         return;
     }
-    char response[4096]{};
+    char response[prospero_session::MessageBytes]{};
     result_.unsaved = false;
     int status = 1;
     do
@@ -738,9 +744,13 @@ void App::generate()
         std::vector<gpt_runtime_message_t> context{{"system", kPrompts[result_.preferences.style]}};
         for (std::size_t i = result_.session.context_start; i < result_.messages.size(); ++i)
             context.push_back({result_.messages[i].role, result_.messages[i].content});
-        status = gpt_runtime_generate(context.data(), static_cast<unsigned>(context.size()),
-                                      {result_.preferences.style, result_.preferences.output_limit},
-                                      response, sizeof(response), &result_.stats, stream_callback);
+        gpt_runtime_settings_t settings{result_.preferences.style,
+                                        result_.preferences.output_limit};
+        settings.context_tokens = result_.preferences.context_limit;
+        settings.model_id = result_.preferences.model_id.c_str();
+        status =
+            gpt_runtime_generate(context.data(), static_cast<unsigned>(context.size()), settings,
+                                 response, sizeof(response), &result_.stats, stream_callback);
         if (!status || !gpt_runtime_context_full() ||
             result_.session.context_start + 2 >= result_.messages.size())
             break;

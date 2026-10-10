@@ -12,7 +12,7 @@ namespace prospero_session
 
 constexpr unsigned MessageCapacity = 64;
 constexpr unsigned CatalogCapacity = 64;
-constexpr unsigned MessageBytes = 4096;
+constexpr unsigned MessageBytes = 32768;
 // Room for a downloaded file's ID, "<owner>-<repository>--<file>.gguf". At 48 bytes a
 // longer ID was cut, and the conversation no longer matched its model.
 constexpr unsigned ModelIdBytes = 384;

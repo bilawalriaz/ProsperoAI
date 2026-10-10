@@ -56,6 +56,8 @@ int main()
     std::snprintf(written[1].timestamp, sizeof(written[1].timestamp), "02:09");
     std::snprintf(written[1].content, sizeof(written[1].content),
                   "Walk it once.\nKeep three pointers.");
+    std::memset(written[1].content, 'x', 24000);
+    written[1].content[24000] = 0;
     assert(save(&record, written, 2));
 
     Record loaded{};

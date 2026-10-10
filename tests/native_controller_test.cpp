@@ -93,12 +93,26 @@ bool gpt_runtime_context_full()
     return false;
 }
 int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
-                         const gpt_runtime_settings_t &, char *output, std::size_t capacity,
+                         const gpt_runtime_settings_t &settings, char *output, std::size_t capacity,
                          gpt_runtime_stats_t *stats, gpt_runtime_progress_fn progress)
 {
     off_ui();
     ++generations;
     assert(count >= 2 && std::strcmp(messages[count - 1].role, "user") == 0);
+    if (std::strcmp(messages[count - 1].content, "Long response") == 0)
+    {
+        assert(settings.max_output_tokens == 4096 && settings.context_tokens == 16384);
+        assert(settings.model_id && std::strcmp(settings.model_id, "model-499") == 0);
+        const std::string text(24000, 'x');
+        for (unsigned i = 0; i < 20; ++i)
+        {
+            progress(text.c_str());
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        std::snprintf(output, capacity, "%s", text.c_str());
+        stats->generated_tokens = 4096;
+        return 0;
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(15));
     progress("Thinking about your question...");
     std::snprintf(output, capacity, "%s",
@@ -237,11 +251,28 @@ int main(int argc, char **argv)
         assert(app.state().messages.size() == 10);
         assert(std::strcmp(app.state().messages[8].content, "A second try") == 0 &&
                std::strcmp(app.state().messages[9].role, "assistant") == 0);
+        assert(app.state().preferences.output_limit == 128);
+        assert(app.state().preferences.context_limit == 0);
         auto preferences = app.state().preferences;
         preferences.reduced_motion = true;
         preferences.accent = 2;
+        preferences.output_limit = 4096;
+        preferences.context_limit = 16384;
         app.set_preferences(preferences);
         settle(app);
+        // An API client may have selected another model between UI requests.
+        selected = 12;
+        assert(app.send("Long response"));
+        bool saw_long_stream = false;
+        while (app.busy())
+        {
+            app.poll();
+            saw_long_stream |= app.state().stream.size() == 24000;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        assert(saw_long_stream);
+        assert(std::strlen(app.state().messages.back().content) == 24000);
+        assert(app.state().stats.generated_tokens == 4096);
     }
     {
         prospero::App app;
@@ -249,6 +280,8 @@ int main(int argc, char **argv)
         settle(app);
         assert(app.state().selected_model == 499);
         assert(app.state().preferences.reduced_motion && app.state().preferences.accent == 2);
+        assert(app.state().preferences.output_limit == 4096 &&
+               app.state().preferences.context_limit == 16384);
         saved.begin()->second.record.model_id[0] = 'x';
         assert(app.open_session(0));
         settle(app);

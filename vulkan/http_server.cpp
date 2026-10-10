@@ -88,8 +88,8 @@ constexpr int kSoReuseAddr = 0x0004;
 constexpr int kNetPoolSize = 4 * 1024 * 1024;
 constexpr int kListenBacklog = 4;
 constexpr std::size_t kRequestCapacity = 256 * 1024;
-constexpr std::size_t kResponseTextCapacity = 4096;
-constexpr std::size_t kResponseCapacity = 8192;
+constexpr std::size_t kResponseTextCapacity = 32768;
+constexpr std::size_t kResponseCapacity = 6 * kResponseTextCapacity + 4096;
 unsigned short kHttpServerPort = 11434;
 
 // FreeBSD sockaddr_in layout: 1-byte length, 1-byte family, big-endian
@@ -311,10 +311,12 @@ void iso8601_now(char *output, std::size_t capacity)
 
 bool run_generation(const gpt_runtime_message_t *messages, unsigned message_count,
                     char *response_text, std::size_t response_capacity, unsigned max_tokens = 512,
-                    gpt_runtime_stats_t *reported_stats = nullptr)
+                    gpt_runtime_stats_t *reported_stats = nullptr, const char *model_id = nullptr, unsigned context_tokens = 0)
 {
     pthread_mutex_lock(&generation_mutex);
-    const gpt_runtime_settings_t settings{0, max_tokens};
+    gpt_runtime_settings_t settings{0, max_tokens};
+    settings.model_id = model_id;
+    settings.context_tokens = context_tokens;
     gpt_runtime_stats_t stats{};
     const int result = gpt_runtime_generate(messages, message_count, settings, response_text,
                                             response_capacity, &stats, nullptr);
@@ -504,10 +506,19 @@ void handle_get_tags(const NetApi &api, int sock)
     send_json(api, sock, body);
 }
 
+unsigned request_option(const char *body, const char *key, unsigned fallback, unsigned maximum) {
+    const char *options = json_value_start(body, "options");
+    const char *value = options ? json_value_start(options, key) : nullptr;
+    if (!value) return fallback;
+    char *end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    return end != value && parsed > 0 && parsed <= maximum ? static_cast<unsigned>(parsed) : fallback;
+}
+
 void handle_generate(const NetApi &api, int sock, const char *request_body)
 {
     char model[128] = {};
-    char prompt[3072] = {};
+    char prompt[65536] = {};
     json_find_string(request_body, "model", model, sizeof(model));
     if (!json_find_string(request_body, "prompt", prompt, sizeof(prompt)))
     {
@@ -517,19 +528,11 @@ void handle_generate(const NetApi &api, int sock, const char *request_body)
     }
     const gpt_runtime_message_t messages[1] = {{"user", prompt}};
     char response_text[kResponseTextCapacity] = {};
-    unsigned max_tokens = 512;
-    const char *options = json_value_start(request_body, "options");
-    const char *prediction = options ? json_value_start(options, "num_predict") : nullptr;
-    if (prediction)
-    {
-        char *end = nullptr;
-        const long value = std::strtol(prediction, &end, 10);
-        if (end != prediction && value > 0 && value <= 512)
-            max_tokens = static_cast<unsigned>(value);
-    }
+    const unsigned max_tokens = request_option(request_body, "num_predict", 512, 4096);
+    const unsigned context_tokens = request_option(request_body, "num_ctx", 0, 16384);
     gpt_runtime_stats_t stats{};
     const bool ok =
-        run_generation(messages, 1, response_text, sizeof(response_text), max_tokens, &stats);
+        run_generation(messages, 1, response_text, sizeof(response_text), max_tokens, &stats, model, context_tokens);
 
     char created_at[32];
     iso8601_now(created_at, sizeof(created_at));
@@ -559,7 +562,7 @@ void handle_chat(const NetApi &api, int sock, const char *request_body)
     const char *messages_array = json_value_start(request_body, "messages");
     gpt_runtime_message_t messages[16];
     char roles[16][32];
-    char contents[16][2048];
+    char contents[16][32768];
     unsigned message_count = 0;
     if (messages_array != nullptr)
     {
@@ -581,7 +584,8 @@ void handle_chat(const NetApi &api, int sock, const char *request_body)
     }
 
     char response_text[kResponseTextCapacity] = {};
-    const bool ok = run_generation(messages, message_count, response_text, sizeof(response_text));
+    const bool ok = run_generation(messages, message_count, response_text, sizeof(response_text), request_option(request_body, "num_predict", 512, 4096),
+                                   nullptr, model, request_option(request_body, "num_ctx", 0, 16384));
 
     char created_at[32];
     iso8601_now(created_at, sizeof(created_at));
