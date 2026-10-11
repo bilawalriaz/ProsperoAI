@@ -882,8 +882,21 @@ void NativeUI::Impl::build_form()
         form_.add_choice(6, "Response style", {"Balanced", "Precise", "Creative"},
                          static_cast<int>(p.style));
         form_.add_choice(7, "Response length",
-                         {"64 tokens", "128 tokens", "192 tokens", "256 tokens"},
-                         static_cast<int>(p.output_limit / 64 - 1));
+                         {"64 tokens", "128 tokens", "192 tokens", "256 tokens", "512 tokens",
+                          "1024 tokens", "2048 tokens", "4096 tokens"},
+                         p.output_limit <= 256    ? static_cast<int>(p.output_limit / 64 - 1)
+                         : p.output_limit == 512  ? 4
+                         : p.output_limit == 1024 ? 5
+                         : p.output_limit == 2048 ? 6
+                                                  : 7);
+        form_.add_choice(
+            8, "Context window",
+            {"Model default", "2048 tokens", "4096 tokens", "8192 tokens", "16384 tokens"},
+            p.context_limit == 0      ? 0
+            : p.context_limit == 2048 ? 1
+            : p.context_limit == 4096 ? 2
+            : p.context_limit == 8192 ? 3
+                                      : 4);
         form_.add_value(9, "Processing", "On this console");
     }
     else if (category_ == 2)
@@ -925,7 +938,10 @@ void NativeUI::Impl::apply_form()
     else if (category_ == 1)
     {
         p.style = static_cast<unsigned>(form_.choice_index(6));
-        p.output_limit = static_cast<unsigned>(form_.choice_index(7) + 1) * 64;
+        constexpr unsigned limits[] = {64, 128, 192, 256, 512, 1024, 2048, 4096};
+        p.output_limit = limits[form_.choice_index(7)];
+        const int context_index = form_.choice_index(8);
+        p.context_limit = context_index ? 2048U << (context_index - 1) : 0;
     }
     else if (category_ == 2)
         p.volume = static_cast<unsigned>(form_.slider_value(3));

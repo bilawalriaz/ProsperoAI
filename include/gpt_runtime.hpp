@@ -18,6 +18,7 @@ struct gpt_runtime_settings_t
     unsigned max_output_tokens;
     float temperature = 0;
     const char* model_id = nullptr; // Select atomically with Vulkan generation.
+    unsigned context_tokens = 0; // Zero uses the model-load configuration.
     const char* grammar = nullptr; // Optional GBNF constraint (Vulkan only).
 };
 

@@ -23,3 +23,11 @@ median 107.08 decode tokens/s for a 40-token prompt and 102.50 for a 616-token
 prompt. The combined native UI/API app measured about 96 tokens/s. These runs
 used the private performance integration, not this independent PR branch.
 Complete model FTP readback matched the pinned SHA-256.
+
+## Integration with main after #17 and #19
+
+The reconciliation retains MiniCPM's explicit BOS and disables automatic BOS in both
+llama tokenization passes. It also retains main's safe prefix-cache transactions,
+position/rollback checks, recurrent full-prefill fallback, explicit model selection,
+transient context overrides and response limits up to 4096. Model support remains
+optional; saved context/Thinking controls belong to #15's broader continuation.
