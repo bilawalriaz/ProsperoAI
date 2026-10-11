@@ -31,3 +31,11 @@ python3 -m unittest discover -s tests -p test_llm_prefix_cache.py -v
 
 It compares cold and cached text, continued chats, truncation, model changes and
 injected failures under AddressSanitizer and UndefinedBehaviorSanitizer.
+
+## Integration with merged response/context controls
+
+The main-branch integration preserves #19's explicit model selection, transient
+512–16384 request context override and response limits up to 4096. Prefix cache
+transactions and resident-position checks remain active; model/context replacement
+invalidates the cache. Saved context settings, automatic KV and retaining model weights
+while recreating a context belong to #15's continuation, rather than this focused PR.

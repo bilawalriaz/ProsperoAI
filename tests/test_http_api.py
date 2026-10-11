@@ -49,6 +49,44 @@ class HttpApiTests(unittest.TestCase):
         self.assertEqual(data["model"], "second.gguf")
         self.assertEqual(data["usage"]["total_tokens"], 14)
 
+    def test_ollama_uses_requested_model(self):
+        for route, body in [
+            ("/api/generate", {"model": "second.gguf", "prompt": "selected-model"}),
+            ("/api/chat", {"model": "second.gguf", "messages": [{"role": "user", "content": "selected-model"}]}),
+        ]:
+            _, response = self.request(route, body)
+            data = json.loads(response)
+            self.assertEqual(data.get("response") or data["message"]["content"], "second.gguf")
+
+    def test_extended_generation_limits(self):
+        for route in ["/api/generate", "/api/chat"]:
+            body = {"model": "tiny.gguf", "prompt": "limits",
+                    "messages": [{"role": "user", "content": "limits"}],
+                    "options": {"num_predict": 4096, "num_ctx": 16384}}
+            _, response = self.request(route, body)
+            data = json.loads(response)
+            self.assertEqual(data.get("response") or data["message"]["content"], "4096:16384")
+            body["prompt"] = "long"
+            body["messages"][0]["content"] = "long"
+            _, response = self.request(route, body)
+            data = json.loads(response)
+            self.assertEqual(len(data.get("response") or data["message"]["content"]), 24000)
+        _, response = self.request(body={"model": "tiny.gguf", "max_tokens": 4096, "context_tokens": 16384,
+                                       "messages": [{"role": "user", "content": "limits"}]})
+        self.assertEqual(json.loads(response)["choices"][0]["message"]["content"], "4096:16384")
+
+    def test_context_validation_and_preserved_defaults(self):
+        for value in [0, -1, 16385, "8192"]:
+            header, response = self.request(body={"model": "tiny.gguf", "context_tokens": value,
+                                                 "messages": [{"role": "user", "content": "limits"}]})
+            self.assertIn("400 Bad Request", header)
+            self.assertEqual(json.loads(response)["error"]["code"], "invalid_context_tokens")
+        _, response = self.request(body={"model": "tiny.gguf",
+                                       "messages": [{"role": "user", "content": "limits"}]})
+        self.assertEqual(json.loads(response)["choices"][0]["message"]["content"], "512:0")
+        _, response = self.request("/api/generate", {"model": "tiny.gguf", "prompt": "limits"})
+        self.assertEqual(json.loads(response)["response"], "512:0")
+
     def test_public_ui_preserves_private_api(self):
         header, body = self.request("/", key="private")
         self.assertIn("200 OK", header)
