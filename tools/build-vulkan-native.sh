@@ -37,6 +37,7 @@ sources=(src/kv_budget.cpp src/prefix_reuse.cpp src/main.cpp src/native_app.cpp 
  src/font_set.cpp src/media_preview.cpp src/dev_script.cpp src/gpt_input.cpp src/gpt_ime.cpp
  src/media_output_ps5.cpp src/session_store.cpp src/runtime_support.cpp
  src/ps5_opencl.cpp src/sd_runtime_ps5.cpp src/stable_audio_runtime_ps5.cpp src/agc_lifecycle.cpp
+ src/kokoro_host_generator.cpp
  vulkan/gpt_runtime_router.cpp vulkan/media_vulkan.cpp
  vulkan/storage.cpp vulkan/storage_paths.cpp vulkan/elevation/elevation.cpp vulkan/debug_tee.cpp src/debug_log.cpp
  src/native_ui_update.cpp vulkan/update_ps5.cpp
@@ -59,11 +60,17 @@ update_definitions=()
 [[ ${UPDATE_DEV_OFFER:-0} != 1 ]] || update_definitions+=(-DPROSPERO_UPDATE_DEV_OFFER=1)
 for relative in "${sources[@]}"; do
  media_includes=()
+ generator_flags=()
  abi_definitions=()
  abi_definitions+=(-DGGML_MAX_NAME=160)
  case "$relative" in
   src/sd_runtime_ps5.cpp)
    media_includes=(-I "$root/.deps/stable-diffusion-vulkan/include");;
+  src/kokoro_host_generator.cpp)
+   # The waveform generator batches sixteen time samples per convolution step so AVX2
+   # can keep independent FP64 accumulators, and -ffp-contract=off preserves the
+   # reference reduction order: the threaded path has to match the serial one exactly.
+   generator_flags=(-O3 -mavx2 -ffp-contract=off);;
  esac
  object="$work/obj/${relative//\//_}.o"
  ninja_inputs=("$root/$relative" "$root/tooling/prospero-clang18")
@@ -77,7 +84,7 @@ for relative in "${sources[@]}"; do
  fi
  ninja_edge CXX "$object" env PS5_PAYLOAD_SDK="$sdk" USE_CCACHE="${USE_CCACHE:-1}" sh "$root/tooling/prospero-clang18" \
   -std=c++20 -O2 -fexceptions -fcxx-exceptions -frtti -Wall -Wextra -Wno-missing-field-initializers \
-  -ffunction-sections -fdata-sections -DPS5_LLAMA_VULKAN -DPROSPERO_UI_VULKAN -DPROSPERO_VULKAN_RUNTIME \
+  -ffunction-sections -fdata-sections "${generator_flags[@]}" -DPS5_LLAMA_VULKAN -DPROSPERO_UI_VULKAN -DPROSPERO_VULKAN_RUNTIME \
   -DPS5_MEDIA_AUDIO -DPS5_MEDIA_IMAGE -DPS5_SANDBOX_APP -DPS5_APP_HAS_DSO_HANDLE -DPS5_SD_GENERATE -DCL_TARGET_OPENCL_VERSION=120 -DGL_GLEXT_PROTOTYPES \
   -DSDL_MAIN_HANDLED -DSDL_STATIC_LIB -DUSING_GENERATED_CONFIG_H \
   "${media_definitions[@]}" "${abi_definitions[@]}" "${media_includes[@]}" -I "$root/include" -I "$root/vulkan" -I "$root/vulkan/ui" -I "$kit_stage/src" -I "$work/generated" \
